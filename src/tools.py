@@ -93,6 +93,38 @@ def fetch_historical_data(coin_id: str, days: int = 7) -> Dict[str, Any]:
         raise
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@sleep_and_retry
+@limits(calls=CALLS, period=RATE_LIMIT)
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+def resolve_coin_id(query: str) -> str:
+    """
+    Resolves a cryptocurrency name to its exact CoinGecko ID using their search API.
+    """
+    logger.info(f"Resolving CoinGecko ID for query: '{query}'...")
+    url = f"{COINGECKO_BASE_URL}/search"
+    params = {"query": query}
+    headers = {"accept": "application/json"}
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        coins = data.get("coins", [])
+        if coins:
+            coin_id = coins[0].get("id")
+            logger.info(f"Resolved query '{query}' to coin_id '{coin_id}'")
+            return coin_id
+        
+        # Fallback naive approach
+        fallback_id = query.strip().lower().replace(" ", "-")
+        logger.warning(f"Could not resolve query '{query}', falling back to '{fallback_id}'")
+        return fallback_id
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error resolving coin_id for '{query}': {str(e)}")
+        return query.strip().lower().replace(" ", "-")
+
+@st.cache_data(ttl=3600, show_spinner=False)
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def fetch_news(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     """

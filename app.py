@@ -8,6 +8,7 @@ import plotly.express as px
 
 from src.graph import build_research_graph
 from src.state import AgentState
+from src.tools import resolve_coin_id
 
 # Load environment variables
 load_dotenv()
@@ -49,7 +50,7 @@ st.subheader("Autonomous Web3 Research Agent")
 
 st.sidebar.header("Configuration")
 st.sidebar.info(
-    "CryptoSage uses LangGraph, Groq, Tavily, and CoinGecko to compile professional-grade crypto research reports."
+    "CryptoSage uses LangGraph, Groq, Tavily, and CoinGecko to compile crypto research reports."
 )
 
 # Check API Keys
@@ -78,11 +79,15 @@ if st.button("Generate Research Report", type="primary", width='stretch'):
         st.error("Cannot proceed without API keys.")
     else:
         # Infer coin_id if not provided
-        inferred_coin_id = coin_id.strip().lower() if coin_id else query.strip().lower().replace(" ", "-")
-        
-        st.info(f"Initializing CryptoSage for **{query}** (ID: {inferred_coin_id})...")
-        
-        # Initialize Graph
+        with st.status(f"Initializing CryptoSage for **{query}**...", expanded=True) as status:
+            if coin_id:
+                inferred_coin_id = coin_id.strip().lower()
+            else:
+                st.write(f"🔍 Searching CoinGecko for '{query}'...")
+                inferred_coin_id = resolve_coin_id(query)
+                st.write(f"✅ Resolved to CoinGecko ID: `{inferred_coin_id}`")
+            
+            # Initialize Graph
         app = build_research_graph()
         
         # Initial State
