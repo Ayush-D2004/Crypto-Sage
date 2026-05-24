@@ -1,0 +1,5 @@
+.env
+sage/
+.vscode
+__pycache__
+__pytest_cache__
