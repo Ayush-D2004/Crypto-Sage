@@ -100,6 +100,26 @@ def resolve_coin_id(query: str) -> str:
     """
     Resolves a cryptocurrency name to its exact CoinGecko ID using their search API.
     """
+    query_lower = query.strip().lower()
+    
+    # Hardcoded map for popular coins that CoinGecko's search API struggles with
+    POPULAR_COINS = {
+        "binance coin": "binancecoin",
+        "bnb": "binancecoin",
+        "bitcoin": "bitcoin",
+        "btc": "bitcoin",
+        "ethereum": "ethereum",
+        "eth": "ethereum",
+        "solana": "solana",
+        "sol": "solana",
+        "ripple": "ripple",
+        "xrp": "ripple",
+        "cardano": "cardano",
+        "ada": "cardano"
+    }
+    if query_lower in POPULAR_COINS:
+        return POPULAR_COINS[query_lower]
+
     logger.info(f"Resolving CoinGecko ID for query: '{query}'...")
     url = f"{COINGECKO_BASE_URL}/search"
     params = {"query": query}
@@ -112,17 +132,24 @@ def resolve_coin_id(query: str) -> str:
         
         coins = data.get("coins", [])
         if coins:
-            coin_id = coins[0].get("id")
+            # Filter and sort by market cap rank to avoid obscure/dead tokens
+            valid_coins = [c for c in coins if c.get("market_cap_rank") is not None]
+            if valid_coins:
+                valid_coins.sort(key=lambda x: x["market_cap_rank"])
+                coin_id = valid_coins[0].get("id")
+            else:
+                coin_id = coins[0].get("id")
+            
             logger.info(f"Resolved query '{query}' to coin_id '{coin_id}'")
             return coin_id
         
         # Fallback naive approach
-        fallback_id = query.strip().lower().replace(" ", "-")
+        fallback_id = query_lower.replace(" ", "-")
         logger.warning(f"Could not resolve query '{query}', falling back to '{fallback_id}'")
         return fallback_id
     except requests.exceptions.RequestException as e:
         logger.error(f"Error resolving coin_id for '{query}': {str(e)}")
-        return query.strip().lower().replace(" ", "-")
+        return query_lower.replace(" ", "-")
 
 @st.cache_data(ttl=3600, show_spinner=False)
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
