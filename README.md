@@ -73,7 +73,6 @@ streamlit run app.py
 # Build and run the container in detached mode
 docker-compose up -d
 
-# The app will be available at http://localhost:8501
 ```
 
 ---
