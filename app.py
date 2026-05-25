@@ -1,4 +1,7 @@
 import os
+import json
+import glob
+from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
 import logging
@@ -16,6 +19,8 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+os.makedirs("sample", exist_ok=True)
 
 st.set_page_config(
     page_title="CryptoSage - Web3 Autonomous Research Agent",
@@ -53,6 +58,11 @@ st.sidebar.info(
     "CryptoSage uses LangGraph, Groq, Tavily, and CoinGecko to compile crypto research reports."
 )
 
+st.sidebar.header("History")
+history_files = sorted(glob.glob("sample/*.json"), reverse=True)
+history_options = ["None"] + [os.path.basename(f) for f in history_files]
+selected_history = st.sidebar.selectbox("Load Previous Report", history_options)
+
 # Check API Keys
 groq_api_key = os.getenv("GROQ_API_KEY")
 tavily_api_key = os.getenv("TAVILY_API_KEY")
@@ -71,6 +81,10 @@ with col1:
 
 with col2:
     coin_id = st.text_input("CoinGecko ID (optional)", placeholder="e.g. solana", help="If left blank, we will try to infer it from the query.")
+
+state_to_display = None
+latency_to_display = None
+query_to_display = ""
 
 if st.button("Generate Research Report", type="primary", width='stretch'):
     if not query:
@@ -137,31 +151,63 @@ if st.button("Generate Research Report", type="primary", width='stretch'):
 
             st.success("Research Report Generated Successfully!")
             
-            # Display Performance Metrics
-            st.subheader("Performance Metrics")
-            st.metric(label="Total Execution Latency", value=f"{latency:.2f} s")
-
-            # Display Data Visualization
-            if "historical_data" in current_state and "prices" in current_state["historical_data"]:
-                st.subheader("Historical Price Trend (7 Days)")
-                prices = current_state["historical_data"]["prices"]
-                df = pd.DataFrame(prices, columns=["timestamp", "price"])
-                df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
-                fig = px.line(df, x="date", y="price", title=f"{query.capitalize()} Price Trend", template="plotly_white")
-                st.plotly_chart(fig, width='stretch')
-
-            # Display Report
-            st.markdown("<div class='report-container'>", unsafe_allow_html=True)
-            st.markdown(current_state["report"])
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            # Expandable Raw Data
-            with st.expander("View Raw Data"):
-                st.write("### Market Data")
-                st.json(current_state["market_data"])
-                st.write("### News Articles")
-                st.json(current_state["news_articles"])
+            # Save history
+            timestamp = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+            safe_query = "".join(c if c.isalnum() else "_" for c in query.strip()).lower()
+            if not safe_query:
+                safe_query = "unknown"
+            filename = f"{safe_query}-{timestamp}.json"
+            filepath = os.path.join("sample", filename)
+            save_data = {"latency": latency, "state": current_state}
+            try:
+                with open(filepath, "w") as f:
+                    json.dump(save_data, f)
+            except Exception as e:
+                st.warning(f"Could not save history: {e}")
                 
+            state_to_display = current_state
+            latency_to_display = latency
+            query_to_display = query
+
         except Exception as e:
             st.error(f"An unexpected error occurred: {str(e)}")
             st.stop()
+
+elif selected_history != "None":
+    filepath = os.path.join("sample", selected_history)
+    try:
+        with open(filepath, "r") as f:
+            saved_data = json.load(f)
+        state_to_display = saved_data.get("state", {})
+        latency_to_display = saved_data.get("latency", 0.0)
+        query_to_display = state_to_display.get("query", selected_history.split("-")[0])
+        st.info(f"Loaded history from {selected_history}")
+    except Exception as e:
+        st.error(f"Error loading history: {e}")
+
+if state_to_display:
+    # Display Performance Metrics
+    st.subheader("Performance Metrics")
+    st.metric(label="Total Execution Latency", value=f"{latency_to_display:.2f} s")
+
+    # Display Data Visualization
+    if "historical_data" in state_to_display and "prices" in state_to_display["historical_data"]:
+        st.subheader("Historical Price Trend (7 Days)")
+        prices = state_to_display["historical_data"]["prices"]
+        df = pd.DataFrame(prices, columns=["timestamp", "price"])
+        df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
+        fig = px.line(df, x="date", y="price", title=f"{query_to_display.capitalize()} Price Trend", template="plotly_white")
+        st.plotly_chart(fig, width='stretch')
+
+    # Display Report
+    st.markdown("<div class='report-container'>", unsafe_allow_html=True)
+    st.markdown(state_to_display.get("report", ""))
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Expandable Raw Data
+    with st.expander("View Raw Data"):
+        st.write("### Market Data")
+        st.json(state_to_display.get("market_data", {}))
+        st.write("### News Articles")
+        st.json(state_to_display.get("news_articles", []))
+
